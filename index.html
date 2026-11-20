@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<title>Présentation</title>
+<style>
+:root { --bg: #F3F2ED; --muted: #5F6C58; --accent: #4F6E45; color-scheme: light; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--muted); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; display: grid; place-items: center; padding-inline: 16px; }
+#msg { display: flex; align-items: center; gap: 12px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); animation: p 1s ease-in-out infinite alternate; }
+@keyframes p { from { opacity: .25; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .dot { animation: none; } }
+</style>
+</head>
+<body>
+<div id="msg" role="status"><span class="dot"></span><span id="txt">Chargement…</span></div>
+<script>
+(async () => {
+  const fail = () => { const d = document.querySelector(".dot"); if (d) d.remove(); document.getElementById("txt").textContent = "Ce lien semble incomplet. Vérifiez l'adresse reçue."; };
+  try {
+    const k = decodeURIComponent(location.hash.slice(1)).trim().toLowerCase();
+    if (!k) return fail();
+    const te = new TextEncoder();
+    const h = new Uint8Array(await crypto.subtle.digest("SHA-256", te.encode("qd:" + k)));
+    const id = Array.from(h, (b) => b.toString(16).padStart(2, "0")).join("").slice(0, 24);
+    const r = await fetch("d/" + id + ".p");
+    if (!r.ok) return fail();
+    const buf = new Uint8Array(await r.arrayBuffer());
+    const base = await crypto.subtle.importKey("raw", te.encode(k), "PBKDF2", false, ["deriveKey"]);
+    const key = await crypto.subtle.deriveKey({ name: "PBKDF2", salt: buf.slice(0, 16), iterations: 100000, hash: "SHA-256" }, base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+    const html = new TextDecoder().decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv: buf.slice(16, 28) }, key, buf.slice(28)));
+    try {
+      const vb = new Uint8Array(await (await fetch("d/" + id + ".v")).arrayBuffer());
+      const mp4 = await crypto.subtle.decrypt({ name: "AES-GCM", iv: vb.slice(0, 12) }, key, vb.slice(12));
+      window.__VID = URL.createObjectURL(new Blob([mp4], { type: "video/mp4" }));
+    } catch (e) { window.__VID = ""; }
+    document.open(); document.write(html); document.close();
+  } catch (e) { fail(); }
+})();
+</script>
+</body>
+</html>
